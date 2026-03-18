@@ -1,0 +1,17 @@
+[package]
+name = "work"
+version = "0.1.0"
+edition = "2024"
+description = "Interactive git worktree manager"
+license = "MIT"
+repository = "https://github.com/qiangfoo/homebrew-work"
+homepage = "https://github.com/qiangfoo/homebrew-work"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.28"
+dialoguer = { version = "0.11", features = ["fuzzy-select"] }
+indicatif = "0.17"
+dirs = "6"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
