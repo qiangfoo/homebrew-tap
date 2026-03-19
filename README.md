@@ -5,7 +5,7 @@ Interactive git worktree manager.
 ## Install
 
 ```sh
-brew install qiangfoo/work/work
+brew install qiangfoo/tap/work
 ```
 
 Then add to your `~/.zshrc` or `~/.bashrc`:

@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 description = "Interactive git worktree manager"
 license = "MIT"
-repository = "https://github.com/qiangfoo/homebrew-work"
-homepage = "https://github.com/qiangfoo/homebrew-work"
+repository = "https://github.com/qiangfoo/homebrew-tap"
+homepage = "https://github.com/qiangfoo/homebrew-tap"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
