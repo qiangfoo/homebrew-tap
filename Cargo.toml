@@ -1,6 +1,6 @@
 [package]
 name = "work"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Interactive git worktree manager"
 license = "MIT"
@@ -12,6 +12,8 @@ clap = { version = "4", features = ["derive"] }
 crossterm = "0.28"
 dialoguer = { version = "0.11", features = ["fuzzy-select"] }
 indicatif = "0.17"
+chrono = "0.4"
 dirs = "6"
 serde = { version = "1", features = ["derive"] }
+shellexpand = "3"
 toml = "0.8"

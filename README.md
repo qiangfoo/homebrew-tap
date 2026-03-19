@@ -18,16 +18,19 @@ eval "$(work init)"
 
 ```sh
 work          # select and switch to a worktree
-work add      # create a new worktree
+work go       # same as above
+work add      # create a new worktree (e.g. "feature" → 03-18-feature)
 work remove   # remove a worktree
 ```
 
+Worktrees created with `work add` are prefixed with the current date: `MM-DD-name`.
+
 ## Configuration
 
-Create `~/.config/work.toml` to set a branch prefix:
+Create `~/.config/work/work.toml`:
 
 ```toml
-branch_prefix = "qiang"
+default_repo = "~/code/myproject"
 ```
 
-This prefixes new branches: `work add` with name `feature` creates branch `qiang-feature`.
+This lets you run `work` from outside a git repo and manage worktrees of the default repo.
