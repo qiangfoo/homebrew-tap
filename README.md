@@ -27,10 +27,16 @@ Worktrees created with `work add` are prefixed with the current date: `MM-DD-nam
 
 ## Configuration
 
-Create `~/.config/work/work.toml`:
-
-```toml
-default_repo = "~/code/myproject"
+```sh
+work config set default_repo ~/code/myproject   # set a config value
+work config get default_repo                     # print a config value
+work config list                                 # print all settings
 ```
 
-This lets you run `work` from outside a git repo and manage worktrees of the default repo.
+Config is stored in `~/.config/work/work.toml`.
+
+### Options
+
+| Key | Description |
+|---|---|
+| `default_repo` | Path to a git repo. Lets you run `work` from outside a git repo. |

@@ -7,11 +7,11 @@ class Work < Formula
   on_macos do
     on_arm do
       url "https://github.com/qiangfoo/homebrew-tap/releases/download/v#{version}/work-aarch64-apple-darwin.tar.gz"
-      sha256 "6680d6662b955be835cd0c62e9f24bc4f7835111b2e769fd917484f10e83f561"
+      sha256 "8df6043330726a42630bb4ddc1acd56868109f86e7b0e2d23b22283e4c6b351d"
     end
     on_intel do
       url "https://github.com/qiangfoo/homebrew-tap/releases/download/v#{version}/work-x86_64-apple-darwin.tar.gz"
-      sha256 "83ae3813ff992cf348454d4d9883aeb46a0833ebaec4131881c583f3abb56c86"
+      sha256 "d47e2f6b4944f642c16e6b26e4ab8e4f510afa20f0b78b1ece7ee45b78cb147a"
     end
   end
 
