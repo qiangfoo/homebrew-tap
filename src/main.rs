@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 use std::path::PathBuf;
 use std::process::{self, Command};
@@ -18,7 +19,12 @@ struct Cli {
 enum SubCommand {
     /// Add a new worktree
     #[command(alias = "create")]
-    Add,
+    Add {
+        /// Create the worktree from an existing branch instead of a new one.
+        /// Pass without a value to pick the branch interactively.
+        #[arg(short, long, num_args = 0..=1)]
+        branch: Option<Option<String>>,
+    },
     /// Remove a worktree
     #[command(alias = "delete")]
     Remove,
@@ -44,8 +50,16 @@ enum ConfigAction {
 }
 
 #[derive(Deserialize, Serialize, Default)]
+struct Hooks {
+    post_add: Option<Vec<String>>,
+    post_remove: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, Serialize, Default)]
 struct Config {
     default_repo: Option<String>,
+    #[serde(default)]
+    hooks: Hooks,
 }
 
 const KNOWN_KEYS: &[&str] = &["default_repo"];
@@ -61,6 +75,24 @@ fn load_config() -> Config {
         .ok()
         .and_then(|s| toml::from_str(&s).ok())
         .unwrap_or_default()
+}
+
+fn run_hooks(commands: &[String], working_dir: &std::path::Path) {
+    for cmd in commands {
+        let status = Command::new("sh")
+            .args(["-c", cmd])
+            .current_dir(working_dir)
+            .status();
+        match status {
+            Ok(s) if !s.success() => {
+                eprintln!("warning: hook `{cmd}` exited with {s}");
+            }
+            Err(e) => {
+                eprintln!("warning: hook `{cmd}` failed to run: {e}");
+            }
+            _ => {}
+        }
+    }
 }
 
 fn do_config(action: ConfigAction) {
@@ -111,6 +143,16 @@ fn do_config(action: ConfigAction) {
             println!(
                 "default_repo = {}",
                 config.default_repo.as_deref().unwrap_or("not set")
+            );
+            println!();
+            println!("[hooks]");
+            println!(
+                "post_add = {:?}",
+                config.hooks.post_add.as_deref().unwrap_or(&[])
+            );
+            println!(
+                "post_remove = {:?}",
+                config.hooks.post_remove.as_deref().unwrap_or(&[])
             );
         }
     }
@@ -223,32 +265,61 @@ fn prompt_text(prompt: &str) -> String {
         .unwrap_or_else(|_| process::exit(1))
 }
 
-fn do_add(repo_dir: Option<&PathBuf>) {
-    let name = prompt_text("Worktree name");
-    let name = name.trim().replace(' ', "-");
-    if name.is_empty() {
-        eprintln!("name cannot be empty");
-        process::exit(1);
+fn branch_exists(branch: &str, repo_dir: Option<&PathBuf>) -> bool {
+    let mut cmd = Command::new("git");
+    cmd.args(["rev-parse", "--verify", "--quiet"])
+        .arg(format!("refs/heads/{branch}"));
+    if let Some(dir) = repo_dir {
+        cmd.current_dir(dir);
     }
+    cmd.output().map(|o| o.status.success()).unwrap_or(false)
+}
 
-    let now = chrono::Local::now();
-    let name = format!("{}-{name}", now.format("%m-%d"));
-    let branch = name.clone();
-
+fn do_add(repo_dir: Option<&PathBuf>, config: &Config, branch: Option<Option<String>>) {
     let main_path = main_worktree_path(repo_dir).unwrap_or_else(|e| {
         eprintln!("error: {e}");
         process::exit(1);
     });
+
+    // name, branch, and whether to pass `-b` to `git worktree add`
+    let (name, branch, new_branch) = match branch {
+        Some(Some(branch)) => {
+            if !branch_exists(&branch, repo_dir) {
+                eprintln!("branch `{branch}` does not exist");
+                process::exit(1);
+            }
+            let name = branch.replace('/', "-");
+            (name, branch, false)
+        }
+        Some(None) => {
+            let branch = select_branch("Select branch", repo_dir).unwrap_or_else(|| process::exit(1));
+            let name = branch.replace('/', "-");
+            (name, branch, false)
+        }
+        None => {
+            let name = prompt_text("Worktree name");
+            let name = name.trim().replace(' ', "-");
+            if name.is_empty() {
+                eprintln!("name cannot be empty");
+                process::exit(1);
+            }
+            let now = chrono::Local::now();
+            let name = format!("{}-{name}", now.format("%m-%d"));
+            (name.clone(), name, true)
+        }
+    };
+
     let worktree_path = main_path.parent().unwrap_or(&main_path).join(&name);
 
     let mut cmd = Command::new("git");
-    cmd.args([
-        "worktree",
-        "add",
-        "-b",
-        &branch,
-        worktree_path.to_str().unwrap(),
-    ]);
+    cmd.arg("worktree").arg("add");
+    if new_branch {
+        cmd.arg("-b").arg(&branch);
+    }
+    cmd.arg(worktree_path.to_str().unwrap());
+    if !new_branch {
+        cmd.arg(&branch);
+    }
     if let Some(dir) = repo_dir {
         cmd.current_dir(dir);
     }
@@ -260,7 +331,62 @@ fn do_add(repo_dir: Option<&PathBuf>) {
         process::exit(1);
     }
 
+    if let Some(hooks) = &config.hooks.post_add {
+        run_hooks(hooks, &worktree_path);
+    }
+
     emit_cd(&worktree_path);
+}
+
+fn list_branches(repo_dir: Option<&PathBuf>) -> Result<Vec<String>, String> {
+    let mut cmd = Command::new("git");
+    cmd.args(["for-each-ref", "--format=%(refname:short)", "refs/heads/"]);
+    if let Some(dir) = repo_dir {
+        cmd.current_dir(dir);
+    }
+    let output = cmd.output().map_err(|e| format!("failed to run git: {e}"))?;
+    if !output.status.success() {
+        return Err("not in a git repository".into());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout.lines().map(|l| l.to_string()).collect())
+}
+
+fn select_branch(prompt: &str, repo_dir: Option<&PathBuf>) -> Option<String> {
+    let branches = list_branches(repo_dir).unwrap_or_else(|e| {
+        eprintln!("error: {e}");
+        process::exit(1);
+    });
+
+    let checked_out: HashSet<String> = list_worktrees(repo_dir)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|w| w.branch)
+        .collect();
+
+    let branches: Vec<String> = branches
+        .into_iter()
+        .filter(|b| !checked_out.contains(b))
+        .collect();
+
+    if branches.is_empty() {
+        eprintln!("no branches available to check out");
+        return None;
+    }
+
+    let theme = ColorfulTheme {
+        active_item_style: console::Style::new().green().force_styling(true),
+        ..ColorfulTheme::default()
+    };
+
+    let selection = Select::with_theme(&theme)
+        .with_prompt(prompt)
+        .items(&branches)
+        .default(0)
+        .interact_opt()
+        .unwrap_or_else(|_| process::exit(1));
+
+    selection.map(|i| branches[i].clone())
 }
 
 fn select_worktree(prompt: &str, repo_dir: Option<&PathBuf>) -> Option<Worktree> {
@@ -315,7 +441,7 @@ fn select_worktree(prompt: &str, repo_dir: Option<&PathBuf>) -> Option<Worktree>
     selection.map(|i| worktrees.into_iter().nth(i).unwrap())
 }
 
-fn do_remove(repo_dir: Option<&PathBuf>) {
+fn do_remove(repo_dir: Option<&PathBuf>, config: &Config) {
     let main_path = main_worktree_path(repo_dir).unwrap_or_else(|e| {
         eprintln!("error: {e}");
         process::exit(1);
@@ -370,6 +496,10 @@ fn do_remove(repo_dir: Option<&PathBuf>) {
 
     spinner.finish_and_clear();
 
+    if let Some(hooks) = &config.hooks.post_remove {
+        run_hooks(hooks, &main_path);
+    }
+
     if cwd.as_deref().is_some_and(|c| c.starts_with(&worktree.path)) {
         emit_cd(&main_path);
     }
@@ -414,8 +544,8 @@ fn main() {
         Some(SubCommand::Init) => do_init(),
         Some(SubCommand::Config { action }) => do_config(action),
         Some(SubCommand::Go) => do_goto(repo_dir.as_ref()),
-        Some(SubCommand::Add) => do_add(repo_dir.as_ref()),
-        Some(SubCommand::Remove) => do_remove(repo_dir.as_ref()),
+        Some(SubCommand::Add { branch }) => do_add(repo_dir.as_ref(), &config, branch),
+        Some(SubCommand::Remove) => do_remove(repo_dir.as_ref(), &config),
         None => do_goto(repo_dir.as_ref()),
     }
 }
